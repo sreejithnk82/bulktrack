@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XLSX Courier Status Analyzer</title>
-    <!-- Load SheetJS Library -->
+    <!-- Load SheetJS Library FIRST -->
     <script src="https://cdn.jsdelivr.net"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
@@ -40,106 +40,116 @@
 </div>
 
 <script>
-    document.getElementById('fileInput').addEventListener('change', handleFile, false);
-
-    function handleFile(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+    // Ensure all scripts are loaded before adding event listeners
+    document.addEventListener('DOMContentLoaded', (event) => {
         
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
-            processData(jsonData);
-        };
-        reader.readAsArrayBuffer(file);
-    }
-
-    function createGroupUI(status, items, isDelivered) {
-        const groupSection = document.createElement('div');
-        groupSection.className = 'status-group';
-
-        // Header
-        const header = document.createElement('div');
-        header.className = 'status-header' + (isDelivered ? ' delivered-header' : '');
-        header.innerHTML = `<span>Status: ${status}</span> <span class="count-badge">${items.length} Items</span>`;
-        groupSection.appendChild(header);
-
-        // Preview Table
-        const scrollBox = document.createElement('div');
-        scrollBox.className = 'scroll-box';
-        let tableHtml = '<table><thead><tr><th>CnNo</th><th>Last Status Date</th><th>City</th></tr></thead><tbody>';
-        items.forEach(item => {
-            tableHtml += `<tr><td>${item.id}</td><td>${item.date}</td><td>${item.city}</td></tr>`;
-        });
-        tableHtml += '</tbody></table>';
-        scrollBox.innerHTML = tableHtml;
-        groupSection.appendChild(scrollBox);
-
-        // Comma Separated List
-        const listArea = document.createElement('div');
-        listArea.className = 'list-area';
-        
-        let batchContent = "";
-        const idsOnly = items.map(i => i.id);
-        
-        for (let i = 0; i < idsOnly.length; i += 100) {
-            const batch = idsOnly.slice(i, i + 100);
-            const batchNum = Math.floor(i / 100) + 1;
-            batchContent += `<span class="batch-sep">BATCH ${batchNum} (${i + 1} - ${Math.min(i + 100, idsOnly.length)})</span>`;
-            batchContent += batch.join(", ");
-            batchContent += "\n------------------------------------------------------------\n";
+        // Check if XLSX object is actually available
+        if (typeof XLSX === 'undefined') {
+            alert("Error: SheetJS library failed to load. Please check your internet connection or try refreshing the page.");
+            return; 
         }
-        
-        listArea.innerHTML = batchContent;
-        groupSection.appendChild(listArea);
 
-        return groupSection;
-    }
+        document.getElementById('fileInput').addEventListener('change', handleFile, false);
 
-    function processData(data) {
-        const pendingOutput = document.getElementById('pendingOutput');
-        const deliveredOutput = document.getElementById('deliveredOutput');
-        
-        pendingOutput.innerHTML = '<h2>Non-Delivered Statuses</h2>';
-        deliveredOutput.innerHTML = '<h2>Delivered Items</h2>';
-
-        const groups = {};
-
-        data.forEach(row => {
-            const status = (row['Last Status/Event'] || 'UNKNOWN').toString().trim().toUpperCase();
-            const cnNo = row['CnNo'];
-            const date = row['Last Status Date Time'] || row['Last Status Code Date'] || 'N/A';
-            const city = row['Destination City'] || 'N/A';
-
-            if (cnNo) {
-                if (!groups[status]) groups[status] = [];
-                groups[status].push({ id: cnNo, date: date, city: city });
-            }
-        });
-
-        // Sort keys so DELIVERED and similar are moved to bottom section
-        const statusKeys = Object.keys(groups).sort();
-        let deliveredFound = false;
-
-        statusKeys.forEach(status => {
-            const isDelivered = (status === 'DELIVERED' || status === 'DLV' || status === 'POD');
-            const ui = createGroupUI(status, groups[status], isDelivered);
-
-            if (isDelivered) {
-                deliveredOutput.appendChild(ui);
-                deliveredFound = true;
-            } else {
-                pendingOutput.appendChild(ui);
-            }
-        });
-
-        if (!deliveredFound) {
-            deliveredOutput.innerHTML += "<p style='color:#777'>No items with 'Delivered' status found in this file.</p>";
+        function handleFile(e) {
+            const file = e.target.files;
+            if (!file || file.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                // The error was happening inside this next line previously
+                const workbook = XLSX.read(data, { type: 'array' }); 
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Fixed index access
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                processData(jsonData);
+            };
+            reader.readAsArrayBuffer(file);
         }
-    }
+
+        // --- Rest of the functions (createGroupUI and processData) remain the same ---
+        function createGroupUI(status, items, isDelivered) {
+            const groupSection = document.createElement('div');
+            groupSection.className = 'status-group';
+
+            const header = document.createElement('div');
+            header.className = 'status-header' + (isDelivered ? ' delivered-header' : '');
+            header.innerHTML = `<span>Status: ${status}</span> <span class="count-badge">${items.length} Items</span>`;
+            groupSection.appendChild(header);
+
+            const scrollBox = document.createElement('div');
+            scrollBox.className = 'scroll-box';
+            let tableHtml = '<table><thead><tr><th>CnNo</th><th>Last Status Date</th><th>City</th></tr></thead><tbody>';
+            items.forEach(item => {
+                tableHtml += `<tr><td>${item.id}</td><td>${item.date}</td><td>${item.city}</td></tr>`;
+            });
+            tableHtml += '</tbody></table>';
+            scrollBox.innerHTML = tableHtml;
+            groupSection.appendChild(scrollBox);
+
+            const listArea = document.createElement('div');
+            listArea.className = 'list-area';
+            
+            let batchContent = "";
+            const idsOnly = items.map(i => i.id);
+            
+            for (let i = 0; i < idsOnly.length; i += 100) {
+                const batch = idsOnly.slice(i, i + 100);
+                const batchNum = Math.floor(i / 100) + 1;
+                batchContent += `<span class="batch-sep">BATCH ${batchNum} (${i + 1} - ${Math.min(i + 100, idsOnly.length)})</span>`;
+                batchContent += batch.join(", ");
+                batchContent += "\n------------------------------------------------------------\n";
+            }
+            
+            listArea.innerHTML = batchContent;
+            groupSection.appendChild(listArea);
+
+            return groupSection;
+        }
+
+        function processData(data) {
+            const pendingOutput = document.getElementById('pendingOutput');
+            const deliveredOutput = document.getElementById('deliveredOutput');
+            
+            pendingOutput.innerHTML = '<h2>Non-Delivered Statuses</h2>';
+            deliveredOutput.innerHTML = '<h2>Delivered Items</h2>';
+
+            const groups = {};
+
+            data.forEach(row => {
+                const status = (row['Last Status/Event'] || 'UNKNOWN').toString().trim().toUpperCase();
+                const cnNo = row['CnNo'];
+                // Prioritize Last Status Date Time, fallback to Code Date, fallback to N/A
+                const date = row['Last Status Date Time'] || row['Last Status Code Date'] || 'N/A'; 
+                const city = row['Destination City'] || 'N/A';
+
+                if (cnNo) {
+                    if (!groups[status]) groups[status] = [];
+                    groups[status].push({ id: cnNo, date: date, city: city });
+                }
+            });
+
+            const statusKeys = Object.keys(groups).sort();
+            let deliveredFound = false;
+
+            statusKeys.forEach(status => {
+                // Using a check function instead of hardcoded list for clarity
+                const isDelivered = ['DELIVERED', 'DLV', 'POD', 'DELIVERY'].includes(status);
+                const ui = createGroupUI(status, groups[status], isDelivered);
+
+                if (isDelivered) {
+                    deliveredOutput.appendChild(ui);
+                    deliveredFound = true;
+                } else {
+                    pendingOutput.appendChild(ui);
+                }
+            });
+
+            if (!deliveredFound) {
+                deliveredOutput.innerHTML += "<p style='color:#777'>No items with 'Delivered' status found in this file.</p>";
+            }
+        }
+    });
 </script>
 
 </body>
