@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XLSX Courier Status Analyzer</title>
+    <!-- Load SheetJS Library -->
+    <script src="https://cdn.jsdelivr.net"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 40px; }
+        h2:first-of-type { margin-top: 0; }
+        .upload-section { border: 2px dashed #3498db; padding: 30px; text-align: center; border-radius: 8px; background: #ebf5fb; margin-bottom: 20px; }
+        .status-group { margin-top: 25px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: #fff; }
+        .status-header { background: #3498db; color: white; padding: 10px 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .delivered-header { background: #27ae60 !important; } /* Green for delivered */
+        .list-area { padding: 15px; background: #fafafa; font-family: 'Courier New', monospace; white-space: pre-wrap; word-break: break-all; font-size: 13px; line-height: 1.6; }
+        .batch-sep { color: #e67e22; font-weight: bold; display: block; margin: 10px 0; border-top: 1px dashed #ccc; padding-top: 10px; }
+        .count-badge { background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 2px 12px; border-radius: 20px; font-size: 0.85em; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
+        th { background: #f8f9fa; position: sticky; top: 0; }
+        .scroll-box { max-height: 200px; overflow-y: auto; border-bottom: 1px solid #ddd; }
+        .section-divider { margin: 50px 0 20px 0; border-top: 4px double #eee; padding-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Consignment Status Analyzer (2026)</h2>
+    
+    <div class="upload-section">
+        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" />
+        <p style="margin-top:10px; font-size: 0.85em; color: #555;">Select your 2026 Tracking XLSX file</p>
+    </div>
+
+    <div id="pendingOutput"></div>
+    <div id="deliveredOutput" class="section-divider"></div>
+</div>
+
+<script>
+    document.getElementById('fileInput').addEventListener('change', handleFile, false);
+
+    function handleFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            processData(jsonData);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function createGroupUI(status, items, isDelivered) {
+        const groupSection = document.createElement('div');
+        groupSection.className = 'status-group';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'status-header' + (isDelivered ? ' delivered-header' : '');
+        header.innerHTML = `<span>Status: ${status}</span> <span class="count-badge">${items.length} Items</span>`;
+        groupSection.appendChild(header);
+
+        // Preview Table
+        const scrollBox = document.createElement('div');
+        scrollBox.className = 'scroll-box';
+        let tableHtml = '<table><thead><tr><th>CnNo</th><th>Last Status Date</th><th>City</th></tr></thead><tbody>';
+        items.forEach(item => {
+            tableHtml += `<tr><td>${item.id}</td><td>${item.date}</td><td>${item.city}</td></tr>`;
+        });
+        tableHtml += '</tbody></table>';
+        scrollBox.innerHTML = tableHtml;
+        groupSection.appendChild(scrollBox);
+
+        // Comma Separated List
+        const listArea = document.createElement('div');
+        listArea.className = 'list-area';
+        
+        let batchContent = "";
+        const idsOnly = items.map(i => i.id);
+        
+        for (let i = 0; i < idsOnly.length; i += 100) {
+            const batch = idsOnly.slice(i, i + 100);
+            const batchNum = Math.floor(i / 100) + 1;
+            batchContent += `<span class="batch-sep">BATCH ${batchNum} (${i + 1} - ${Math.min(i + 100, idsOnly.length)})</span>`;
+            batchContent += batch.join(", ");
+            batchContent += "\n------------------------------------------------------------\n";
+        }
+        
+        listArea.innerHTML = batchContent;
+        groupSection.appendChild(listArea);
+
+        return groupSection;
+    }
+
+    function processData(data) {
+        const pendingOutput = document.getElementById('pendingOutput');
+        const deliveredOutput = document.getElementById('deliveredOutput');
+        
+        pendingOutput.innerHTML = '<h2>Non-Delivered Statuses</h2>';
+        deliveredOutput.innerHTML = '<h2>Delivered Items</h2>';
+
+        const groups = {};
+
+        data.forEach(row => {
+            const status = (row['Last Status/Event'] || 'UNKNOWN').toString().trim().toUpperCase();
+            const cnNo = row['CnNo'];
+            const date = row['Last Status Date Time'] || row['Last Status Code Date'] || 'N/A';
+            const city = row['Destination City'] || 'N/A';
+
+            if (cnNo) {
+                if (!groups[status]) groups[status] = [];
+                groups[status].push({ id: cnNo, date: date, city: city });
+            }
+        });
+
+        // Sort keys so DELIVERED and similar are moved to bottom section
+        const statusKeys = Object.keys(groups).sort();
+        let deliveredFound = false;
+
+        statusKeys.forEach(status => {
+            const isDelivered = (status === 'DELIVERED' || status === 'DLV' || status === 'POD');
+            const ui = createGroupUI(status, groups[status], isDelivered);
+
+            if (isDelivered) {
+                deliveredOutput.appendChild(ui);
+                deliveredFound = true;
+            } else {
+                pendingOutput.appendChild(ui);
+            }
+        });
+
+        if (!deliveredFound) {
+            deliveredOutput.innerHTML += "<p style='color:#777'>No items with 'Delivered' status found in this file.</p>";
+        }
+    }
+</script>
+
+</body>
+</html>
