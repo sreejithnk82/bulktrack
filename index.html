@@ -53,20 +53,34 @@
         document.getElementById('fileInput').addEventListener('change', handleFile, false);
 
         function handleFile(e) {
-            const file = e.target.files;
-            if (!file || file.length === 0) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
-                // The error was happening inside this next line previously
-                const workbook = XLSX.read(data, { type: 'array' }); 
-                const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Fixed index access
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
-                processData(jsonData);
-            };
-            reader.readAsArrayBuffer(file);
+    // 1. Ensure the target and files list actually exist
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+        console.warn("File selection was cancelled or no file was found.");
+        return; 
+    }
+    
+    // 2. Safely grab the first file
+    const file = files[0];
+    
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        try {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            processData(jsonData);
+        } catch (err) {
+            console.error("Error parsing the XLSX file:", err);
+            alert("Could not read the file. Please ensure it is a valid Excel format.");
         }
+    };
+    
+    // 3. Begin reading only after confirming the file exists
+    reader.readAsArrayBuffer(file);
+}
+
 
         // --- Rest of the functions (createGroupUI and processData) remain the same ---
         function createGroupUI(status, items, isDelivered) {
